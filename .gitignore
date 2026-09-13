@@ -1,0 +1,7 @@
+﻿backend/database/patha_sarathi.db
+__pycache__/
+*.pyc
+gis_dashboard/node_modules/
+gis_dashboard/dist/
+
+/package-lock.json
