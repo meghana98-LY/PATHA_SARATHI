@@ -6,34 +6,37 @@ incidents_bp = Blueprint("incidents", __name__)
 
 @incidents_bp.route("/api/incidents/ingest", methods=["POST"])
 def ingest_edge_payload():
-    payload = request.get_json()
-    if not payload or "hazards" not in payload:
-        return jsonify({"error": "Invalid payload format"}), 400
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
 
-    lat = payload["location"]["latitude"]
-    lng = payload["location"]["longitude"]
-    processed_results = []
+    device_id = data.get("device_id", "UNKNOWN_DEVICE")
+    timestamp = data.get("timestamp")
+    location = data.get("location", {})
+    hazards = data.get("hazards", [])
 
-    for hazard in payload["hazards"]:
-        res = process_hazard_deduplication(
-            hazard_type=hazard["hazard_type"],
-            latitude=lat,
-            longitude=lng,
-            confidence=hazard["confidence"]
-        )
-        processed_results.append(res)
+    if not hazards:
+        return jsonify({"error": "No hazards present in payload"}), 400
 
-    return jsonify({
-        "status": "SUCCESS",
-        "processed_count": len(processed_results),
-        "results": processed_results
-    }), 201
+    # Process the primary hazard in the list
+    hazard = hazards[0]
+
+    result = process_hazard_deduplication(
+        device_id=device_id,
+        timestamp=timestamp,
+        location=location,
+        hazard=hazard
+    )
+
+    return jsonify(result), 200
 
 @incidents_bp.route("/api/incidents", methods=["GET"])
-def get_all_incidents():
+def get_active_incidents():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM incidents ORDER BY last_updated_at DESC")
-    rows = [dict(row) for row in cursor.fetchall()]
+    cursor.execute("SELECT * FROM incidents WHERE status != 'RESOLVED' ORDER BY priority_score DESC")
+    rows = cursor.fetchall()
     conn.close()
-    return jsonify({"incidents": rows}), 200
+
+    incidents = [dict(row) for row in rows]
+    return jsonify({"incidents": incidents}), 200
