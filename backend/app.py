@@ -1,7 +1,10 @@
 from flask import Flask
+from flask_cors import CORS
 from backend.routes.incidents import incidents_bp
 
 app = Flask(__name__)
+CORS(app)  # Enables cross-origin requests for Frontend and Mobile apps
+
 app.register_blueprint(incidents_bp)
 
 @app.route("/health", methods=["GET"])
