@@ -1,0 +1,13 @@
+{
+  "incident_id": "INC-0004",
+  "type": "road obstruction",
+  "confidence": 0.95,
+  "latitude": 12.9722,
+  "longitude": 77.5954,
+  "timestamp": "2026-09-12T18:32:34Z",
+  "image_url": "data/evidence/INC-0004.jpg",
+  "source": "bus",
+  "bus_id": "BUS_LIVE_TEST",
+  "status": "pending",
+  "priority": "critical"
+}

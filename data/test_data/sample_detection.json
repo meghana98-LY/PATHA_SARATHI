@@ -1,0 +1,6 @@
+{
+  "class": "pothole",
+  "confidence": 0.91,
+  "bbox": [100, 120, 300, 250],
+  "notes": "Sample raw detection format returned by BaseDetector.detect(frame)"
+}

@@ -1,0 +1,13 @@
+{
+  "incident_id": "INC-0003",
+  "type": "damaged road",
+  "confidence": 0.84,
+  "latitude": 12.9716,
+  "longitude": 77.5946,
+  "timestamp": "2026-09-12T18:32:34Z",
+  "image_url": "data/evidence/INC-0003.jpg",
+  "source": "bus",
+  "bus_id": "BUS_LIVE_TEST",
+  "status": "pending",
+  "priority": "high"
+}
