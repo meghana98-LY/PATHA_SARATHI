@@ -12,7 +12,7 @@ export const MOCK_INCIDENTS = [
     latitude: 12.9716,
     longitude: 77.5946,
     timestamp: "2026-09-12T10:30:20",
-    image_url: "https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=600&q=80",
+    image_url: "",
     source: "bus",
     bus_id: "BUS_101",
     status: "pending",
@@ -28,7 +28,7 @@ export const MOCK_INCIDENTS = [
     latitude: 12.9352,
     longitude: 77.6245,
     timestamp: "2026-09-12T11:10:00",
-    image_url: "https://images.unsplash.com/photo-1584463688353-27c67644d6b0?auto=format&fit=crop&w=600&q=80",
+    image_url: "",
     source: "citizen",
     bus_id: null,
     status: "verified",
@@ -44,7 +44,7 @@ export const MOCK_INCIDENTS = [
     latitude: 12.9850,
     longitude: 77.6100,
     timestamp: "2026-09-12T12:00:00",
-    image_url: "https://images.unsplash.com/photo-1508873696983-2df515122519?auto=format&fit=crop&w=600&q=80",
+    image_url: "",
     source: "bus",
     bus_id: "BUS_102",
     status: "resolved",
@@ -104,10 +104,10 @@ export const MOCK_INCIDENTS = [
 
 /**
  * Normalizes backend hazard types into standard lowercase snake_case.
- * e.g., "Pothole" -> "pothole", "Road Damage" -> "road_damage"
  */
 function normalizeHazardType(hazardType) {
   if (!hazardType) return "pothole";
+
   return hazardType
     .toString()
     .trim()
@@ -116,45 +116,57 @@ function normalizeHazardType(hazardType) {
 }
 
 /**
- * Maps dynamic numerical priority scores to frontend priority labels.
- * score >= 70 -> "high"
- * 40 <= score < 70 -> "medium"
- * score < 40 -> "low"
+ * Maps numerical priority scores to frontend priority labels.
  */
 function getPriorityLabel(priorityScore) {
   const score = Number(priorityScore) || 0;
+
   if (score >= 70) return "high";
   if (score >= 40) return "medium";
+
   return "low";
 }
 
 /**
  * Normalizes backend status values into frontend status labels.
- * RESOLVED -> resolved
- * IN_PROGRESS -> in_progress
- * VERIFIED -> verified
- * REPORTED, PENDING, or unknown -> pending
  */
 function normalizeStatus(status) {
   if (!status) return "pending";
+
   const s = status.toString().trim().toUpperCase();
+
   if (s === "RESOLVED") return "resolved";
   if (s === "IN_PROGRESS") return "in_progress";
   if (s === "VERIFIED") return "verified";
   if (s === "REPORTED" || s === "PENDING") return "pending";
+
   return s.toLowerCase();
 }
 
 /**
- * Transforms a raw backend incident record into standard frontend representation.
+ * Transforms a raw backend incident record into
+ * the standard frontend representation.
  */
-
 function transformBackendIncident(item) {
   if (!item || typeof item !== "object") return null;
 
-  const rawId = item.id !== undefined ? item.id : (item.raw_id !== undefined ? item.raw_id : null);
-  const incidentCode = item.incident_code || item.incident_id || (rawId !== null ? `INC${rawId}` : `INC_${Date.now()}`);
-  const score = item.priority_score !== undefined ? Number(item.priority_score) : 50;
+  const rawId =
+    item.id !== undefined
+      ? item.id
+      : item.raw_id !== undefined
+        ? item.raw_id
+        : null;
+
+  const incidentCode =
+    item.incident_code ||
+    item.incident_id ||
+    (rawId !== null ? `INC${rawId}` : `INC_${Date.now()}`);
+
+  const score =
+    item.priority_score !== undefined
+      ? Number(item.priority_score)
+      : 50;
+
   const lat = Number(item.latitude) || 0;
   const lng = Number(item.longitude) || 0;
 
@@ -162,85 +174,205 @@ function transformBackendIncident(item) {
     raw_id: rawId,
     incident_id: incidentCode,
     type: normalizeHazardType(item.hazard_type || item.type),
-    confidence: item.confidence !== undefined ? Number(item.confidence) : 0.85,
+    confidence:
+      item.confidence !== undefined
+        ? Number(item.confidence)
+        : 0.85,
     latitude: lat,
     longitude: lng,
-    timestamp: item.first_reported_at || item.last_updated_at || item.timestamp || new Date().toISOString(),
+    timestamp:
+      item.first_reported_at ||
+      item.last_updated_at ||
+      item.timestamp ||
+      new Date().toISOString(),
     image_url: item.image_url || "",
-    source: item.source || (item.device_id ? "bus" : "citizen"),
-    bus_id: item.device_id || item.bus_id || (item.source === "bus" ? "BUS_NODE_01" : null),
+    source:
+      item.source ||
+      (item.device_id ? "bus" : "citizen"),
+    bus_id:
+      item.device_id ||
+      item.bus_id ||
+      (item.source === "bus" ? "BUS_NODE_01" : null),
     status: normalizeStatus(item.status),
     priority: getPriorityLabel(score),
     priority_score: score,
-    location_name: item.location_name || `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`
+    location_name:
+      item.location_name ||
+      `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`
   };
 }
 
 /**
- * Fetches road hazard incidents from backend API with mock fallback
+ * Fetches road hazard incidents from backend API.
  */
 export async function fetchIncidents() {
   try {
-    const response = await fetch(`${API_BASE_URL}/incidents`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/incidents`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      }
+    );
 
     if (!response.ok) {
-      throw new Error(`Server returned HTTP ${response.status}`);
+      throw new Error(
+        `Server returned HTTP ${response.status}`
+      );
     }
 
     const data = await response.json();
+
     let rawList = [];
 
     if (Array.isArray(data)) {
       rawList = data;
-    } else if (data && Array.isArray(data.incidents)) {
+    } else if (
+      data &&
+      Array.isArray(data.incidents)
+    ) {
       rawList = data.incidents;
     } else {
-      throw new Error("Invalid incident data structure returned from API");
+      throw new Error(
+        "Invalid incident data structure returned from API"
+      );
     }
 
     const transformedList = rawList
       .map(transformBackendIncident)
       .filter(item => item !== null);
 
-    return transformedList.length > 0 ? transformedList : MOCK_INCIDENTS;
+    return transformedList.length > 0
+      ? transformedList
+      : MOCK_INCIDENTS;
   } catch (error) {
-    console.warn("Backend API unavailable, using sample incident data:", error.message);
+    console.warn(
+      "Backend API unavailable, using sample incident data:",
+      error.message
+    );
+
     return MOCK_INCIDENTS;
   }
 }
 
 /**
- * Update an incident's status via PATCH request to backend
+ * Update an incident's status via PATCH request.
  */
-export async function updateIncidentStatus(incidentId, newStatus) {
+export async function updateIncidentStatus(
+  incidentId,
+  newStatus
+) {
   try {
     let targetId = incidentId;
-    if (typeof incidentId === 'object' && incidentId !== null) {
-      targetId = incidentId.raw_id !== undefined && incidentId.raw_id !== null
-        ? incidentId.raw_id
-        : incidentId.incident_id;
+
+    if (
+      typeof incidentId === "object" &&
+      incidentId !== null
+    ) {
+      targetId =
+        incidentId.raw_id !== undefined &&
+        incidentId.raw_id !== null
+          ? incidentId.raw_id
+          : incidentId.incident_id;
     }
 
-    const response = await fetch(`${API_BASE_URL}/incidents/${targetId}/status`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ status: newStatus }),
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/incidents/${targetId}/status`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: newStatus,
+        }),
+      }
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to update status on server (HTTP ${response.status})`);
+      throw new Error(
+        `Failed to update status on server (HTTP ${response.status})`
+      );
     }
 
     return await response.json();
   } catch (err) {
-    console.warn(`Local status change for ${typeof incidentId === 'object' ? incidentId.incident_id : incidentId} to ${newStatus} (offline mode):`, err.message);
-    return { success: true, incident_id: incidentId, status: newStatus };
+    console.warn(
+      `Local status change for ${
+        typeof incidentId === "object"
+          ? incidentId.incident_id
+          : incidentId
+      } to ${newStatus} (offline mode):`,
+      err.message
+    );
+
+    return {
+      success: true,
+      incident_id: incidentId,
+      status: newStatus,
+    };
   }
+}
+
+/**
+ * Fetches persistent authority alerts generated
+ * by Medha's Authority Action service.
+ */
+export async function fetchAuthorityAlerts() {
+  const response = await fetch(
+    `${API_BASE_URL}/alerts`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch authority alerts (HTTP ${response.status})`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data || !Array.isArray(data.alerts)) {
+    throw new Error(
+      "Invalid authority alert data structure returned from API"
+    );
+  }
+
+  return data.alerts;
+}
+
+/**
+ * Updates the status of an authority alert.
+ */
+export async function updateAuthorityAlertStatus(
+  alertId,
+  newStatus
+) {
+  const response = await fetch(
+    `${API_BASE_URL}/alerts/${alertId}/status`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: newStatus,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to update authority alert status (HTTP ${response.status})`
+    );
+  }
+
+  return await response.json();
 }

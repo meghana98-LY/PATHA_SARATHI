@@ -1,44 +1,12 @@
-# authority/alert_service.py
-
-"""
-PATHA SARATHI - Authority Alert Service
-
-Responsibilities:
-1. Calculate incident priority.
-2. Create authority alerts.
-3. Assign departments.
-4. Generate notifications.
-5. Track alert status.
-
-This version supports the actual PATHA SARATHI
-incident JSON format.
-"""
-
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from authority.dispatch import create_dispatch
 from authority.notification import send_notification
-
-
-# Temporary in-memory alert storage.
-# This is suitable for the prototype.
-# Later, it can be replaced with the project database.
-ALERTS = []
+from backend.database.connection import get_db_connection
 
 
 def calculate_priority(incident: dict) -> str:
-    """
-    Calculate priority using confidence, report count,
-    and hazard type.
-
-    Priority rules for the prototype:
-    - CRITICAL: Dangerous hazard + high confidence
-    - HIGH: High confidence and/or multiple reports
-    - MEDIUM: Moderate confidence
-    - LOW: Low confidence
-    """
-
     hazard_type = (
         incident.get("hazard_type")
         or incident.get("type")
@@ -69,11 +37,30 @@ def calculate_priority(incident: dict) -> str:
     return "low"
 
 
-def create_alert(incident: dict) -> dict:
-    """
-    Convert an incident into an authority alert.
-    """
+def _row_to_alert(row):
+    if not row:
+        return None
 
+    return {
+        "alert_id": row["alert_id"],
+        "incident_id": row["incident_id"],
+        "hazard_type": row["hazard_type"],
+        "location": row["location"],
+        "latitude": row["latitude"],
+        "longitude": row["longitude"],
+        "confidence": row["confidence"],
+        "report_count": row["report_count"],
+        "priority": row["priority"],
+        "department": row["department"],
+        "assigned_team": row["assigned_team"],
+        "status": row["status"],
+        "source": row["source"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def create_alert(incident: dict) -> dict:
     incident_id = (
         incident.get("incident_code")
         or incident.get("incident_id")
@@ -86,16 +73,38 @@ def create_alert(incident: dict) -> dict:
         or "unknown"
     )
 
-    alert_id = f"ALT-{uuid4().hex[:8].upper()}"
-
     priority = (
         incident.get("priority")
         or calculate_priority(incident)
     )
 
+    # Prevent duplicate authority alerts for the same incident.
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM authority_alerts
+        WHERE incident_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (str(incident_id),)
+    )
+
+    existing = cursor.fetchone()
+
+    if existing:
+        conn.close()
+        return _row_to_alert(existing)
+
+    alert_id = f"ALT-{uuid4().hex[:8].upper()}"
+    created_at = datetime.now(timezone.utc).isoformat()
+
     alert = {
         "alert_id": alert_id,
-        "incident_id": incident_id,
+        "incident_id": str(incident_id),
         "hazard_type": hazard_type,
         "location": incident.get("location", "Unknown"),
         "latitude": incident.get("latitude"),
@@ -107,36 +116,63 @@ def create_alert(incident: dict) -> dict:
         "assigned_team": None,
         "status": "PENDING_ACTION",
         "source": incident.get("source", "backend"),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": created_at,
+        "updated_at": None,
     }
 
-    # Assign the responsible department.
     dispatch = create_dispatch(alert)
 
     alert["department"] = dispatch["department"]
     alert["assigned_team"] = dispatch["assigned_team"]
 
-    # Store alert temporarily.
-    ALERTS.append(alert)
+    cursor.execute(
+        """
+        INSERT INTO authority_alerts (
+            alert_id,
+            incident_id,
+            hazard_type,
+            location,
+            latitude,
+            longitude,
+            confidence,
+            report_count,
+            priority,
+            department,
+            assigned_team,
+            status,
+            source,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            alert["alert_id"],
+            alert["incident_id"],
+            alert["hazard_type"],
+            alert["location"],
+            alert["latitude"],
+            alert["longitude"],
+            alert["confidence"],
+            alert["report_count"],
+            alert["priority"],
+            alert["department"],
+            alert["assigned_team"],
+            alert["status"],
+            alert["source"],
+            alert["created_at"],
+            alert["updated_at"],
+        ),
+    )
+
+    conn.commit()
+    conn.close()
 
     return alert
 
 
 def process_incident(incident: dict) -> dict:
-    """
-    Complete authority workflow:
-
-    Incident
-       ↓
-    Alert
-       ↓
-    Department Assignment
-       ↓
-    Notification
-    """
-
     alert = create_alert(incident)
-
     notification = send_notification(alert)
 
     return {
@@ -146,36 +182,51 @@ def process_incident(incident: dict) -> dict:
 
 
 def get_all_alerts() -> list:
-    """
-    Return all authority alerts.
-    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    return ALERTS
+    cursor.execute(
+        """
+        SELECT *
+        FROM authority_alerts
+        ORDER BY
+            CASE priority
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                WHEN 'medium' THEN 3
+                WHEN 'low' THEN 4
+                ELSE 5
+            END,
+            created_at DESC
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [_row_to_alert(row) for row in rows]
 
 
 def get_alert_by_id(alert_id: str):
-    """
-    Find an alert using its alert ID.
-    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    for alert in ALERTS:
-        if alert["alert_id"] == alert_id:
-            return alert
+    cursor.execute(
+        """
+        SELECT *
+        FROM authority_alerts
+        WHERE alert_id = ?
+        """,
+        (alert_id,)
+    )
 
-    return None
+    row = cursor.fetchone()
+    conn.close()
+
+    return _row_to_alert(row)
 
 
 def update_alert_status(alert_id: str, status: str):
-    """
-    Update the action status of an alert.
-
-    Allowed statuses:
-    PENDING_ACTION
-    IN_PROGRESS
-    RESOLVED
-    REJECTED
-    """
-
     valid_statuses = {
         "PENDING_ACTION",
         "IN_PROGRESS",
@@ -195,7 +246,26 @@ def update_alert_status(alert_id: str, status: str):
     if alert is None:
         return None
 
-    alert["status"] = status
-    alert["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updated_at = datetime.now(timezone.utc).isoformat()
 
-    return alert
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE authority_alerts
+        SET status = ?,
+            updated_at = ?
+        WHERE alert_id = ?
+        """,
+        (
+            status,
+            updated_at,
+            alert_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return get_alert_by_id(alert_id)
