@@ -13,7 +13,7 @@ class RoadHazardDetector:
         "Road Damage": "General Road Damage"
     }
 
-    def __init__(self, repo_id="rezzzq/yolo12s-road-damage-rdd2022", filename="model.pt"):
+    def __init__(self, repo_id="rezzzq/yolo12s-road-damage-rdd2022", filename="yolo12s_RDD2022_best.pt"):
         print(f"[INFO] Initializing Road Hazard Detector...")
         model_path = None
 
