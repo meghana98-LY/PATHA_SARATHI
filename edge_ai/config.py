@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Project Root Directory: D:\SIH (parent of edge_ai/)
+# Project root directory (parent of edge_ai/)
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
 # Load .env file from project root if present
@@ -64,8 +64,8 @@ class EdgeConfig:
 
     # Backend Integration
     BACKEND_URL: str = field(
-        default_factory=lambda: os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
-    )
+    default_factory=lambda: os.getenv("BACKEND_URL", "http://127.0.0.1:5000").rstrip("/")
+)
 
     # Storage Paths
     OUTPUT_DIR: Path = field(

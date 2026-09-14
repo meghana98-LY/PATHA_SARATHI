@@ -5,7 +5,7 @@ Includes abstract Detector interface, MockDetector, and runnable CLI.
 """
 
 from __future__ import annotations
-
+from edge_ai.detector import KishorDetector as kDetector
 import argparse
 import logging
 import sys
@@ -157,7 +157,8 @@ class EdgePipeline:
 
     def upload_incident(self, incident: dict[str, Any]) -> bool:
         """
-        Dispatches incident JSON to Lohith's backend ingestion endpoint: POST /api/incidents.
+        Dispatches incident JSON to Lohith's backend ingestion endpoint:
+        POST /api/incidents/ingest.
         Never crashes the edge capture pipeline on network errors or backend downtime.
 
         Args:
@@ -167,11 +168,17 @@ class EdgePipeline:
             bool: True if backend confirmed ingestion, False otherwise.
         """
         if self.no_upload:
-            logger.debug(f"[BACKEND] Upload skipped (--no-upload enabled) for {incident['incident_id']}")
+            logger.debug(
+                f"[BACKEND] Upload skipped (--no-upload enabled) "
+                f"for device {incident.get('device_id', 'UNKNOWN_DEVICE')}"
+            )
             return False
 
-        url = f"{self.cfg.BACKEND_URL}/api/incidents"
-        logger.info(f"[BACKEND] POST {url} for incident {incident['incident_id']}")
+        url = f"{self.cfg.BACKEND_URL}/api/incidents/ingest"
+        logger.info(
+            f"[BACKEND] POST {url} for device "
+            f"{incident.get('device_id', 'UNKNOWN_DEVICE')}"
+        )
 
         try:
             response = requests.post(
@@ -182,7 +189,9 @@ class EdgePipeline:
             )
             if response.status_code in (200, 201, 202):
                 logger.info(
-                    f"[BACKEND] Success: Ingestion confirmed for {incident['incident_id']} (HTTP {response.status_code})"
+                    f"[BACKEND] Success: Ingestion confirmed for device "
+                    f"{incident.get('device_id', 'UNKNOWN_DEVICE')} "
+                    f"(HTTP {response.status_code})"
                 )
                 return True
             else:
@@ -193,7 +202,8 @@ class EdgePipeline:
         except Exception as e:
             logger.warning(
                 f"[BACKEND] Failure: Unable to reach backend at {url}: {e}. "
-                f"Incident {incident['incident_id']} safely preserved locally."
+                f"Device {incident.get('device_id', 'UNKNOWN_DEVICE')} "
+                f"payload preserved locally."
             )
             return False
 
@@ -232,19 +242,25 @@ class EdgePipeline:
         location = self.gps.get_location()
 
         for det in raw_detections:
-            hazard_class = str(det.get("class", "unknown")).strip().lower()
-            confidence = float(det.get("confidence", 0.0))
+            hazard_type = str(
+                det.get("hazard_type", det.get("class", "unknown"))
+            ).strip()
 
+            raw_class = str(
+                det.get("raw_class", det.get("class", "unknown"))
+            ).strip()
+
+            confidence = float(det.get("confidence", 0.0))
             # 3. Confidence Threshold Filter
             if confidence < self.cfg.CONFIDENCE_THRESHOLD:
                 logger.debug(
-                    f"[AI] Dropped {hazard_class} with low confidence {confidence:.2f} < {self.cfg.CONFIDENCE_THRESHOLD}"
+                    f"[AI] Dropped {hazard_type} with low confidence {confidence:.2f} < {self.cfg.CONFIDENCE_THRESHOLD}"
                 )
                 continue
 
             # 4. Cooldown Deduplication Filter
             if self.cooldown.should_suppress(
-                hazard_class=hazard_class,
+                hazard_class=hazard_type,
                 lat=location["latitude"],
                 lon=location["longitude"],
                 current_frame=frame_num,
@@ -258,10 +274,28 @@ class EdgePipeline:
                 location=location,
                 timestamp=timestamp,
             )
+            backend_payload = {
+                "device_id": self.cfg.BUS_ID,
+                "timestamp": timestamp,
+                "location": {
+                    "latitude": location["latitude"],
+                    "longitude": location["longitude"],
+                    "speed_kmh": location.get("speed_kmh", 0.0),
+                },
+                "detections_count": 1,
+                "hazards": [
+                    {
+                        "hazard_type": hazard_type,
+                        "raw_class": raw_class,
+                        "confidence": confidence,
+                        "bbox": det.get("bbox", []),
+                    }
+                ],
+            }
             created_incidents.append(incident)
 
             # 6. Backend API Upload (Non-blocking failure)
-            self.upload_incident(incident)
+            self.upload_incident(backend_payload)
 
         return created_incidents
 
@@ -387,7 +421,7 @@ def main() -> None:
     )
 
     camera = CameraCapture(source=active_cfg.VIDEO_SOURCE)
-    detector = MockDetector()
+    detector = kDetector()
     gps = GPSHandler(
         mode=active_cfg.GPS_MODE,
         exhaustion_behavior=active_cfg.GPS_EXHAUSTION_BEHAVIOR,

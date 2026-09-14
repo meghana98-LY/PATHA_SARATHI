@@ -53,7 +53,7 @@ class BaseGPSAdapter(ABC):
 
     @abstractmethod
     def read_coordinates(self) -> dict[str, float]:
-        """Returns {'latitude': float, 'longitude': float}."""
+        """Returns latitude, longitude, and speed in km/h."""
         pass
 
 
@@ -95,7 +95,11 @@ class SimulatedGPSAdapter(BaseGPSAdapter):
 
         point = self._route[idx]
         self._index += 1
-        return {"latitude": point["latitude"], "longitude": point["longitude"]}
+        return {
+            "latitude": point["latitude"],
+            "longitude": point["longitude"],
+            "speed_kmh": float(point.get("speed_kmh", 25.0)),
+        }
 
 
 class RealGPSAdapter(BaseGPSAdapter):
@@ -112,13 +116,17 @@ class RealGPSAdapter(BaseGPSAdapter):
     def read_coordinates(self) -> dict[str, float]:
         """Reads from hardware receiver. Falls back to default if hardware is unattached."""
         logger.warning("[GPS] Real hardware adapter not connected; returning fallback coordinate.")
-        return {"latitude": 12.9716, "longitude": 77.5946}
+        return {
+            "latitude": 12.9716,
+            "longitude": 77.5946,
+            "speed_kmh": 0.0,
+        }
 
 
 class GPSHandler:
     """
     High-level GPS manager for the Edge Capture module.
-    Always returns a valid location dict: {'latitude': float, 'longitude': float}.
+    Always returns a valid location dict with latitude, longitude, and speed.
     """
 
     def __init__(
@@ -149,16 +157,41 @@ class GPSHandler:
 
     def get_location(self) -> dict[str, float]:
         """
-        Acquires current GPS coordinates. Always guaranteed to return valid floats.
+        Acquires current GPS coordinates and speed.
 
         Returns:
-            dict[str, float]: {'latitude': float, 'longitude': float}
+            dict[str, float]: {
+                'latitude': float,
+                'longitude': float,
+                'speed_kmh': float
+            }
         """
         try:
             coords = self._adapter.read_coordinates()
-            lat, lon = _validate_coordinates(coords["latitude"], coords["longitude"])
-            logger.debug(f"[GPS] latitude={lat} longitude={lon}")
-            return {"latitude": lat, "longitude": lon}
+            lat, lon = _validate_coordinates(
+                coords["latitude"],
+                coords["longitude"]
+            )
+            speed_kmh = float(coords.get("speed_kmh", 0.0))
+
+            logger.debug(
+                f"[GPS] latitude={lat} longitude={lon} speed={speed_kmh} km/h"
+            )
+
+            return {
+                "latitude": lat,
+                "longitude": lon,
+                "speed_kmh": speed_kmh,
+            }
+
         except Exception as e:
-            logger.error(f"[GPS] Error reading coordinates from adapter: {e}. Falling back to default.")
-            return {"latitude": 12.9716, "longitude": 77.5946}
+            logger.error(
+                f"[GPS] Error reading coordinates from adapter: {e}. "
+                "Falling back to default."
+            )
+
+            return {
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+                "speed_kmh": 0.0,
+            }

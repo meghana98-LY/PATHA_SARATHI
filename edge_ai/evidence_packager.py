@@ -223,12 +223,14 @@ class EvidencePackager:
             logger.info(f"[EVIDENCE] saved: {image_file_path.resolve()}")
 
         # 2. Build standard Incident JSON (Contract with Lohith & Parvati)
-        incident_payload: dict[str, Any] = {
+        incident_payload = {
             "incident_id": incident_id,
             "type": hazard_type,
+            "raw_class": detection.get("raw_class", detection.get("class", hazard_type)),
             "confidence": round(confidence, 4),
             "latitude": round(lat, 6),
             "longitude": round(lon, 6),
+            "speed_kmh": round(float(location.get("speed_kmh", 0.0)), 2),
             "timestamp": timestamp,
             "image_url": image_url,
             "source": "bus",
@@ -236,7 +238,6 @@ class EvidencePackager:
             "status": "pending",
             "priority": get_hazard_priority(hazard_type),
         }
-
         # 3. Save local JSON file for debugging and offline audit
         json_file_path = self.cfg.TEST_DATA_DIR / f"{incident_id}.json"
         with open(json_file_path, "w", encoding="utf-8") as f:
