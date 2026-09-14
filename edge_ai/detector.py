@@ -23,7 +23,7 @@ class KishorDetector:
     def __init__(
         self,
         repo_id: str = "rezzzq/yolo12s-road-damage-rdd2022",
-        filename: str = "model.pt",
+        filename: str = "yolo12s_RDD2022_best.pt",
     ) -> None:
         self.detector = RoadHazardDetector(
             repo_id=repo_id,
