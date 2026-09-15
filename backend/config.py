@@ -1,9 +1,11 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class Config:
-    # Database Settings
-    BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-    DB_PATH = os.path.join(BASE_DIR, "database", "patha_sarathi.db")
+    # NeonDB PostgreSQL Connection URI
+    DATABASE_URL = os.getenv("DATABASE_URL")
     
     # Deduplication & Thresholds
     DEDUPLICATION_RADIUS_METERS = 15.0
