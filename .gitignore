@@ -34,3 +34,8 @@ Desktop.ini
 
 # Node.js dependencies
 node_modules/
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3

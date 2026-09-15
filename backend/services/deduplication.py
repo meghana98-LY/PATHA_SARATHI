@@ -48,14 +48,17 @@ def process_hazard_deduplication(
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # ---------------------------------------------------------
+    # STEP 1: Find nearby ACTIVE / UNRESOLVED incident
+    # ---------------------------------------------------------
     cursor.execute(
         "SELECT * FROM incidents WHERE status != 'RESOLVED'"
     )
-    incidents = cursor.fetchall()
+    active_incidents = cursor.fetchall()
 
     matched_incident = None
 
-    for incident in incidents:
+    for incident in active_incidents:
         dist = haversine_distance(
             lat,
             lng,
@@ -70,19 +73,52 @@ def process_hazard_deduplication(
             matched_incident = incident
             break
 
+    # ---------------------------------------------------------
+    # STEP 2: If no active incident, search RESOLVED incidents
+    #         to detect recurrence.
+    # ---------------------------------------------------------
+    previous_resolved_incident = None
+
+    if matched_incident is None:
+        cursor.execute(
+            "SELECT * FROM incidents WHERE status = 'RESOLVED'"
+        )
+        resolved_incidents = cursor.fetchall()
+
+        for incident in resolved_incidents:
+            dist = haversine_distance(
+                lat,
+                lng,
+                incident["latitude"],
+                incident["longitude"],
+            )
+
+            if (
+                dist <= radius_meters
+                and incident["hazard_type"] == hazard_type
+            ):
+                previous_resolved_incident = incident
+                break
+
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    # Remember whether the matched incident was already verified.
-    # This prevents duplicate authority alerts.
+    # ---------------------------------------------------------
+    # STEP 3: Remember verification state for active incident
+    # ---------------------------------------------------------
     was_verified = (
         matched_incident is not None
         and matched_incident["verification_status"] == "VERIFIED"
     )
 
+    # ---------------------------------------------------------
+    # CASE A: Existing ACTIVE incident -> DEDUPLICATE
+    # ---------------------------------------------------------
     if matched_incident:
+
         incident_id = matched_incident["id"]
 
         new_count = matched_incident["report_count"] + 1
+
         new_confidence = max(
             matched_incident["confidence"],
             confidence,
@@ -115,7 +151,13 @@ def process_hazard_deduplication(
 
         action = "DEDUPLICATED"
 
-    else:
+    # ---------------------------------------------------------
+    # CASE B: Previous RESOLVED incident -> REOCCURRENCE
+    # ---------------------------------------------------------
+    elif previous_resolved_incident:
+
+        previous_incident_id = previous_resolved_incident["id"]
+
         inc_code = (
             f"INC-{int(datetime.now(timezone.utc).timestamp())}"
         )
@@ -137,10 +179,68 @@ def process_hazard_deduplication(
                 priority_score,
                 confidence,
                 report_count,
+                verification_status,
+                status,
+                occurrence_type,
+                previous_incident_id,
                 first_reported_at,
                 last_updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 1, 'UNVERIFIED',
+                    'REPORTED', 'REOCCURRENCE', ?, ?, ?)
+            """,
+            (
+                inc_code,
+                hazard_type,
+                lat,
+                lng,
+                initial_priority,
+                confidence,
+                previous_incident_id,
+                now_iso,
+                now_iso,
+            ),
+        )
+
+        incident_id = cursor.lastrowid
+
+        action = "REOCCURRENCE"
+
+    # ---------------------------------------------------------
+    # CASE C: No nearby incident -> NEW
+    # ---------------------------------------------------------
+    else:
+
+        inc_code = (
+            f"INC-{int(datetime.now(timezone.utc).timestamp())}"
+        )
+
+        initial_priority = calculate_priority_score(
+            hazard_type,
+            confidence,
+            1,
+            speed_kmh,
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO incidents (
+                incident_code,
+                hazard_type,
+                latitude,
+                longitude,
+                priority_score,
+                confidence,
+                report_count,
+                verification_status,
+                status,
+                occurrence_type,
+                previous_incident_id,
+                first_reported_at,
+                last_updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 1, 'UNVERIFIED',
+                    'REPORTED', 'NEW', NULL, ?, ?)
             """,
             (
                 inc_code,
@@ -155,9 +255,12 @@ def process_hazard_deduplication(
         )
 
         incident_id = cursor.lastrowid
+
         action = "CREATED"
 
-    # Store the complete Edge AI detection log.
+    # ---------------------------------------------------------
+    # STEP 4: Store Edge AI detection log
+    # ---------------------------------------------------------
     cursor.execute(
         """
         INSERT INTO detection_logs (
@@ -189,16 +292,20 @@ def process_hazard_deduplication(
     conn.commit()
     conn.close()
 
-    # Trigger automatic verification.
+    # ---------------------------------------------------------
+    # STEP 5: Automatic verification
+    # ---------------------------------------------------------
     verification_status = evaluate_incident_verification(
         incident_id
     )
 
-    # Create an authority alert only when the incident becomes
-    # newly verified. This prevents repeated alerts for duplicates.
+    # ---------------------------------------------------------
+    # STEP 6: Authority alert
+    # ---------------------------------------------------------
     alert = None
 
     if verification_status == "VERIFIED" and not was_verified:
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -213,12 +320,26 @@ def process_hazard_deduplication(
         if incident:
             alert = process_incident(dict(incident))
 
+    # ---------------------------------------------------------
+    # STEP 7: Return result
+    # ---------------------------------------------------------
     result = {
         "action": action,
         "incident_id": incident_id,
         "status": "SUCCESS",
         "verification_status": verification_status,
     }
+
+    # Include recurrence information
+    if action == "REOCCURRENCE":
+        result["occurrence_type"] = "REOCCURRENCE"
+        result["previous_incident_id"] = previous_resolved_incident["id"]
+        result["previous_incident_code"] = (
+            previous_resolved_incident["incident_code"]
+        )
+
+    elif action == "CREATED":
+        result["occurrence_type"] = "NEW"
 
     if alert:
         result["authority_alert"] = alert
