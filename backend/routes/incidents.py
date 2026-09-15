@@ -18,7 +18,6 @@ def ingest_edge_payload():
     if not hazards:
         return jsonify({"error": "No hazards present in payload"}), 400
 
-    # Process the primary hazard in the list
     hazard = hazards[0]
 
     result = process_hazard_deduplication(
@@ -30,12 +29,23 @@ def ingest_edge_payload():
 
     return jsonify(result), 200
 
+
 @incidents_bp.route("/api/incidents", methods=["GET"])
 def get_active_incidents():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM incidents WHERE status != 'RESOLVED' ORDER BY priority_score DESC")
+    
+    # Ensure all fields including image_data are retrieved
+    cursor.execute("""
+        SELECT id, incident_code, hazard_type, latitude, longitude, 
+               priority_score, confidence, report_count, verification_status, 
+               status, image_data, first_reported_at, last_updated_at
+        FROM incidents 
+        WHERE status != 'RESOLVED' 
+        ORDER BY priority_score DESC
+    """)
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
 
     incidents = [dict(row) for row in rows]
