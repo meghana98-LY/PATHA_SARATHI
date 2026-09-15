@@ -1,4 +1,4 @@
-# Python virtual environment
+# Python virtual environments
 .venv/
 venv/
 env/
@@ -6,15 +6,31 @@ env/
 # Python cache
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 
-# Environment variables
+# Environment and secrets
 .env
+.env.local
+*.env
 
-# IDE
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
 .vscode/
 .idea/
 
-# OS files
+# OS artifacts
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# Downloaded / generated model files
+*.pt
+*.onnx
+*.engine
+
+# Node.js dependencies
+node_modules/
